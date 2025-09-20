@@ -29,6 +29,7 @@ def decision_llm(state: State):
     prompt = ChatPromptTemplate.from_messages(
         [
             ("system", """Tell me whether the given user query is:
+             - a normal query, like asking for information, advice, etc, or something not related to guidance or test (in that case, just say "normal")
              - guidance related (like regarding future plans or scope in different fields or he wants to explore some field, etc)
              - test related (whether the user wants to check is knowledge in a perticular field through a test or something)
              return the answer in only one word, nothing else, either guidance or test
@@ -49,6 +50,8 @@ def decision(state:State):
         return "guidance_node"
     elif "test" in dec:
         return "test_node"
+    elif "normal" in dec:
+        return "normal_node"
     
 def guidance_llm(state:State):
     user_input = state["user_input"]
@@ -62,12 +65,26 @@ def test_llm(state:State):
 
     return {"messages" : state["messages"] + [output]}
 
+def normal_llm(state:State):
+    prompt = ChatPromptTemplate.from_messages(
+        [
+            ("system", """You are a helpful assistant. Answer the user query as best as you can, just answer point to point, nothing else, and dont add any ** or something to show bold letters and all. Dont extend the answer unnecessarily, keep it short and precise.
+             """),
+             ("user", "command: {command}")
+        ]
+    )
+    user_input = state["user_input"]
+    chain = prompt|llm
+    response = chain.invoke({"command" : user_input})
+    return {"messages" : state["messages"] + [response]}
+
 graph_builder = StateGraph(State)
 
 #nodes
 graph_builder.add_node("decision_node",decision_llm)
 graph_builder.add_node("guidance_node",guidance_llm)
 graph_builder.add_node("test_node",test_llm)
+graph_builder.add_node("normal_node",normal_llm)
 
 #edges
 graph_builder.set_entry_point("decision_node")
@@ -76,7 +93,8 @@ graph_builder.add_conditional_edges(
     decision,
     {
         "guidance_node":"guidance_node",
-        "test_node":"test_node"
+        "test_node":"test_node",
+        "normal_node":"normal_node"
     }
 )
 
