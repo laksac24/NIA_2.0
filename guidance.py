@@ -52,8 +52,8 @@ def tool_calling_llm(state:State):
              ("user", "command: {command}")
         ]
     )
-    llm_with_tools = llm.bind_tools(tools)
-    chain = prompt|llm_with_tools
+    # llm_with_tools = llm.bind_tools(tools)
+    chain = prompt|llm
     # ai_message = chain.invoke({"command": state["messages"][-1]})
     # return {"messages": state["messages"] + [ai_message]}
     return {"messages": [chain.invoke(state["messages"])]}
