@@ -12,6 +12,7 @@ from user_test import user_test
 from guidance import guidance
 import os
 from dotenv import load_dotenv
+from fastapi.middleware.cors import CORSMiddleware
 load_dotenv()
 
 
@@ -107,6 +108,14 @@ graph = graph_builder.compile()
 
 
 app = FastAPI(title="Guidance & Test API", version="1.0.0")
+
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
 
 
 class UserRequest(BaseModel):
