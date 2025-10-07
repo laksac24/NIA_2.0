@@ -13,18 +13,11 @@ load_dotenv()
 from langchain_groq import ChatGroq
 llm=ChatGroq(model="llama-3.3-70b-versatile")
 
-from langchain_tavily import TavilySearch
-tool = TavilySearch(max_results=2, time_range="month")
-
-tools=[tool]
-
-llm_with_tools=llm.bind_tools(tools)
-
 from langgraph.graph import StateGraph,START,END
 from langgraph.prebuilt import ToolNode
 from langgraph.prebuilt import tools_condition
 
-def tool_calling_llm(state:State):
+async def tool_calling_llm(state:State):
     prompt = ChatPromptTemplate.from_messages(
         [
             ("system", """
@@ -52,35 +45,20 @@ def tool_calling_llm(state:State):
              ("user", "command: {command}")
         ]
     )
-    # llm_with_tools = llm.bind_tools(tools)
-    chain = prompt|llm
-    # ai_message = chain.invoke({"command": state["messages"][-1]})
-    # return {"messages": state["messages"] + [ai_message]}
-    return {"messages": [chain.invoke(state["messages"])]}
 
-# graph
-def guidance(query):
+    chain = prompt|llm
+    response = await chain.ainvoke(state["messages"])
+    return {"messages": [response]}
+
+async def guidance(query):
     graph_builder = StateGraph(State)
     graph_builder.add_node("llm_node",tool_calling_llm)
-    graph_builder.add_node("tool_node",ToolNode(tools))
 
-    # edges
     graph_builder.add_edge(START,"llm_node")
-    graph_builder.add_conditional_edges(
-        "llm_node",
-        tools_condition,
-        {
-            "tools": "tool_node",
-            "__end__": END
-        }
-    )
-    graph_builder.add_edge("tool_node","llm_node")
+    graph_builder.add_edge("llm_node",END)
 
     graph=graph_builder.compile()
 
-    response = graph.invoke({"messages":query})
-    # last_msg = response["messages"][-1]
-    # return getattr(last_msg, "content", str(last_msg))
+    response = await graph.ainvoke({"messages":query})
     return response["messages"][-1].content
 
-# web_answer("any ai discoveries today?")
