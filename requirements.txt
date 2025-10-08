@@ -87,3 +87,5 @@ langgraph-prebuilt==0.5.2
 langgraph-sdk==0.1.74
 langsmith==0.4.8
 gunicorn
+redis
+celery
