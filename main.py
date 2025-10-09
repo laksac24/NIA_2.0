@@ -30,11 +30,37 @@ class State(TypedDict):
 #     backend = os.getenv("CELERY_RESULT_BACKEND", "redis://localhost:6379/2")
 # )
 
-REDIS_HOST = os.getenv("REDIS_HOST", "localhost")
-REDIS_PORT = int(os.getenv("REDIS_PORT", 6379))
-REDIS_DB = int(os.getenv("REDIS_DB", 0))
-REDIS_PASSWORD = os.getenv("REDIS_PASSWORD", None)
-CACHE_TTL = int(os.getenv("CACHE_TTL", 3600)) 
+# REDIS_HOST = os.getenv("REDIS_HOST", "localhost")
+# REDIS_PORT = int(os.getenv("REDIS_PORT", 6379))
+# REDIS_DB = int(os.getenv("REDIS_DB", 0))
+# REDIS_PASSWORD = os.getenv("REDIS_PASSWORD", None)
+# CACHE_TTL = int(os.getenv("CACHE_TTL", 3600)) 
+
+# redis_client = None
+
+# async def get_redis_client():
+#     global redis_client
+#     if redis_client is None:
+#         try:
+#             redis_client = await redis.Redis(
+#                 host=REDIS_HOST,
+#                 port=REDIS_PORT,
+#                 db=REDIS_DB,
+#                 decode_responses=True
+#             )
+            
+#             await redis_client.ping()
+#             print("Redis connected successfully")
+#         except Exception as e:
+#             print(f"Redis connection failed: {e}")
+#             print("App will run without caching")
+#             redis_client = None
+
+#     return redis_client
+
+
+REDIS_URL = os.getenv("REDIS_CACHE_URL")
+CACHE_TTL = int(os.getenv("CACHE_TTL", 3600))
 
 redis_client = None
 
@@ -42,21 +68,18 @@ async def get_redis_client():
     global redis_client
     if redis_client is None:
         try:
-            redis_client = await redis.Redis(
-                host=REDIS_HOST,
-                port=REDIS_PORT,
-                db=REDIS_DB,
+            redis_client = redis.from_url(
+                REDIS_URL,
                 decode_responses=True
             )
-            
             await redis_client.ping()
-            print("Redis connected successfully")
+            print("Redis connected successfully via Upstash TCP")
         except Exception as e:
             print(f"Redis connection failed: {e}")
             print("App will run without caching")
             redis_client = None
-
     return redis_client
+
 
 def generate_cache_key(query: str) -> str:
     normalised_query = query.lower().strip()

@@ -9,21 +9,25 @@ from guidance import guidance
 import os
 from dotenv import load_dotenv
 import asyncio
+import ssl
 
 load_dotenv()
 
 # Celery configuration
-REDIS_HOST = os.getenv("REDIS_HOST", "localhost")
-REDIS_PORT = int(os.getenv("REDIS_PORT", 6379))
-CELERY_BROKER_URL = os.getenv("CELERY_BROKER_URL", f"redis://{REDIS_HOST}:{REDIS_PORT}/1")
-CELERY_RESULT_BACKEND = os.getenv("CELERY_RESULT_BACKEND", f"redis://{REDIS_HOST}:{REDIS_PORT}/2")
+# REDIS_HOST = os.getenv("REDIS_HOST", "localhost")
+# REDIS_PORT = int(os.getenv("REDIS_PORT", 6379))
+REDIS_BROKER_URL = os.getenv("REDIS_BROKER_URL")
+REDIS_RESULT_BACKEND = os.getenv("REDIS_RESULT_BACKEND")
 
 # Initialize Celery app
 celery_app = Celery(
     "guidance_worker",
-    broker=CELERY_BROKER_URL,
-    backend=CELERY_RESULT_BACKEND
+    broker=REDIS_BROKER_URL,
+    backend=REDIS_RESULT_BACKEND
 )
+
+celery_app.conf.broker_use_ssl = {'ssl_cert_reqs': ssl.CERT_NONE}
+celery_app.conf.redis_backend_use_ssl = {'ssl_cert_reqs': ssl.CERT_NONE}
 
 # Celery settings
 celery_app.conf.update(
