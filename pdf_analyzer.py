@@ -93,321 +93,6 @@
 # #     uvicorn.run(app, host="0.0.0.0", port=port)
 
 
-# import fitz
-# from fastapi import FastAPI, UploadFile, File, Form, HTTPException, BackgroundTasks
-# from fastapi.middleware.cors import CORSMiddleware
-# from langchain_core.messages import HumanMessage, SystemMessage
-# from langchain_groq import ChatGroq
-# import tempfile
-# import os
-# from dotenv import load_dotenv
-# import uvicorn
-# import json
-# import re
-# import base64
-# import asyncio
-# from functools import lru_cache
-
-# load_dotenv()
-
-# # Initialize LLM with connection pooling
-# llm = ChatGroq(
-#     model="meta-llama/llama-4-scout-17b-16e-instruct", 
-#     temperature=0.3,
-#     max_retries=2,
-#     timeout=60
-# )
-
-# app = FastAPI()
-
-# app.add_middleware(
-#     CORSMiddleware,
-#     allow_origins=["*"],
-#     allow_credentials=True,
-#     allow_methods=["*"],
-#     allow_headers=["*"],
-# )
-
-# # Rate limiting: simple in-memory tracker
-# request_tracker = {}
-
-# async def check_rate_limit(client_ip: str):
-#     """Simple rate limiting: 3 requests per minute"""
-#     import time
-#     current_time = time.time()
-    
-#     if client_ip in request_tracker:
-#         requests = request_tracker[client_ip]
-#         # Remove old requests (older than 1 minute)
-#         requests = [t for t in requests if current_time - t < 60]
-        
-#         if len(requests) >= 3:
-#             raise HTTPException(status_code=429, detail="Rate limit exceeded. Max 3 requests per minute.")
-        
-#         requests.append(current_time)
-#         request_tracker[client_ip] = requests
-#     else:
-#         request_tracker[client_ip] = [current_time]
-
-# def pdf_to_images(pdf_path, max_pages=3):
-#     """Convert PDF to base64 images - LIMIT TO 3 PAGES for speed"""
-#     doc = fitz.open(pdf_path)
-#     images = []
-    
-#     # Only process first 3 pages (most important)
-#     pages_to_process = min(len(doc), max_pages)
-    
-#     for i in range(pages_to_process):
-#         page = doc[i]
-#         # REDUCED DPI: 100 instead of 150 (saves 55% processing time)
-#         pix = page.get_pixmap(matrix=fitz.Matrix(100/72, 100/72))
-#         img_data = pix.tobytes("png")
-#         img_base64 = base64.b64encode(img_data).decode('utf-8')
-#         images.append(img_base64)
-    
-#     doc.close()
-#     return images
-
-# def extract_text(pdf_path, max_chars=3000):
-#     """Extract text from PDF - LIMIT OUTPUT"""
-#     doc = fitz.open(pdf_path)
-#     text = ""
-    
-#     # Only extract from first 2 pages
-#     for i in range(min(2, len(doc))):
-#         text += doc[i].get_text()
-#         if len(text) > max_chars:
-#             break
-    
-#     doc.close()
-#     return text[:max_chars]
-
-# def clean_json_response(response_text):
-#     """Clean and extract JSON from LLM response"""
-#     cleaned = response_text.strip()
-#     cleaned = re.sub(r'^```(?:json)?\s*\n', '', cleaned)
-#     cleaned = re.sub(r'\n```\s*$', '', cleaned)
-    
-#     match = re.search(r'\{.*\}', cleaned, re.DOTALL)
-#     if match:
-#         return match.group(0)
-#     return cleaned
-
-# def parse_json_safe(json_str):
-#     """Parse JSON with error handling"""
-#     try:
-#         return json.loads(json_str)
-#     except json.JSONDecodeError as e:
-#         print(f"JSON Error: {e.msg}")
-#         # Try to fix
-#         fixed = json_str.replace('\n', ' ').replace('\r', '')
-#         try:
-#             return json.loads(fixed)
-#         except:
-#             return None
-
-# @lru_cache(maxsize=1)
-# def get_system_prompt():
-#     """Cached system prompt"""
-#     return """You are a resume analyzer. Analyze quickly and provide scores.
-
-# CRITICAL: Keep responses CONCISE. Max 80 characters per text field.
-
-# Return ONLY valid JSON (no markdown):
-# {
-#     "target_role": "role",
-#     "overall_score": 0,
-#     "brief_overview": "short overview",
-#     "ats_score": {
-#         "score": 0,
-#         "feedback": "brief",
-#         "issues": ["issue1"],
-#         "improvements": ["fix1"],
-#         "missing_keywords": ["word1"]
-#     },
-#     "content_score": {
-#         "score": 0,
-#         "feedback": "brief",
-#         "issues": ["issue1"],
-#         "improvements": ["fix1"],
-#         "strong_sections": ["section1"],
-#         "weak_sections": ["section1"]
-#     },
-#     "structure_score": {
-#         "score": 0,
-#         "feedback": "brief",
-#         "issues": ["issue1"],
-#         "improvements": ["fix1"],
-#         "missing_sections": ["section1"]
-#     },
-#     "skills_score": {
-#         "score": 0,
-#         "feedback": "brief",
-#         "issues": ["issue1"],
-#         "improvements": ["fix1"],
-#         "relevant_skills": ["skill1"],
-#         "missing_skills": ["skill1"]
-#     },
-#     "tone_style_score": {
-#         "score": 0,
-#         "feedback": "brief",
-#         "issues": ["issue1"],
-#         "improvements": ["fix1"]
-#     },
-#     "role_specific_analysis": {
-#         "match_percentage": 0,
-#         "key_requirements_met": ["req1"],
-#         "key_requirements_missing": ["req1"],
-#         "competitive_advantages": ["adv1"],
-#         "red_flags": ["flag1"],
-#         "priority_changes": ["change1", "change2"]
-#     },
-#     "career_opportunities": ["role1", "role2"],
-#     "action_plan": [
-#         {"priority": "High", "action": "action", "section": "Experience"}
-#     ]
-# }"""
-
-# async def analyze_resume_llm(images, text, target_role):
-#     """Send resume to LLM - optimized"""
-    
-#     content = [
-#         {"type": "text", "text": f"Analyze for: {target_role}\nBe concise."}
-#     ]
-    
-#     # Only send images (no duplicate text)
-#     for img in images[:2]:  # Max 2 images
-#         content.append({
-#             "type": "image_url",
-#             "image_url": {"url": f"data:image/png;base64,{img}"}
-#         })
-    
-#     messages = [
-#         SystemMessage(content=get_system_prompt()),
-#         HumanMessage(content=content)
-#     ]
-    
-#     # Timeout protection
-#     try:
-#         response = await asyncio.wait_for(
-#             llm.ainvoke(messages),
-#             timeout=45  # 45 second timeout
-#         )
-#         return response.content
-#     except asyncio.TimeoutError:
-#         raise HTTPException(status_code=504, detail="LLM timeout")
-
-# def create_error_response(error_msg):
-#     """Minimal error response"""
-#     return {
-#         "target_role": "Unknown",
-#         "overall_score": 0,
-#         "brief_overview": f"Error: {error_msg}",
-#         "ats_score": {"score": 0, "feedback": "Error", "issues": [], "improvements": [], "missing_keywords": []},
-#         "content_score": {"score": 0, "feedback": "Error", "issues": [], "improvements": [], "strong_sections": [], "weak_sections": []},
-#         "structure_score": {"score": 0, "feedback": "Error", "issues": [], "improvements": [], "missing_sections": []},
-#         "skills_score": {"score": 0, "feedback": "Error", "issues": [], "improvements": [], "relevant_skills": [], "missing_skills": []},
-#         "tone_style_score": {"score": 0, "feedback": "Error", "issues": [], "improvements": []},
-#         "role_specific_analysis": {"match_percentage": 0, "key_requirements_met": [], "key_requirements_missing": [], "competitive_advantages": [], "red_flags": [], "priority_changes": []},
-#         "career_opportunities": [],
-#         "action_plan": []
-#     }
-
-# @app.get("/")
-# async def root():
-#     return {"message": "Resume Analyzer API", "status": "running"}
-
-# @app.get("/health")
-# async def health():
-#     """Health check for monitoring"""
-#     return {"status": "healthy", "workers": 2}
-
-# @app.post("/analyze-resume")
-# async def analyze_resume(
-#     file: UploadFile = File(...),
-#     target_role: str = Form(...)
-# ):
-#     # Rate limiting (basic)
-#     # await check_rate_limit(request.client.host)  # Uncomment if needed
-    
-#     # Validate
-#     if not file.filename.endswith('.pdf'):
-#         raise HTTPException(status_code=400, detail="PDF files only")
-    
-#     if not target_role.strip():
-#         raise HTTPException(status_code=400, detail="Target role required")
-    
-#     # Check file size (limit to 5MB)
-#     content = await file.read()
-#     if len(content) > 5 * 1024 * 1024:
-#         raise HTTPException(status_code=400, detail="File too large (max 5MB)")
-    
-#     # Save file
-#     with tempfile.NamedTemporaryFile(delete=False, suffix=".pdf") as tmp:
-#         tmp.write(content)
-#         tmp_path = tmp.name
-    
-#     try:
-#         # Process PDF (optimized)
-#         images = pdf_to_images(tmp_path, max_pages=3)
-#         text = extract_text(tmp_path, max_chars=3000)
-        
-#         if not images:
-#             raise HTTPException(status_code=400, detail="Could not process PDF")
-        
-#         # Single attempt (no retry for speed)
-#         print(f"Analyzing resume for: {target_role}")
-        
-#         llm_response = await analyze_resume_llm(images, text, target_role.strip())
-        
-#         # Parse
-#         json_str = clean_json_response(llm_response)
-#         result = parse_json_safe(json_str)
-        
-#         if not result or "overall_score" not in result:
-#             result = create_error_response("Invalid response")
-#         else:
-#             # Recalculate score
-#             scores = [
-#                 result.get("ats_score", {}).get("score", 0),
-#                 result.get("content_score", {}).get("score", 0),
-#                 result.get("structure_score", {}).get("score", 0),
-#                 result.get("skills_score", {}).get("score", 0),
-#                 result.get("tone_style_score", {}).get("score", 0)
-#             ]
-#             result["overall_score"] = round(sum(scores) / 5, 1)
-        
-#         return {
-#             "success": True,
-#             "target_role": result.get("target_role", target_role),
-#             "overall_score": result.get("overall_score", 0),
-#             "brief_overview": result.get("brief_overview", ""),
-#             "scores": {
-#                 "ats": result.get("ats_score", {}),
-#                 "content": result.get("content_score", {}),
-#                 "structure": result.get("structure_score", {}),
-#                 "skills": result.get("skills_score", {}),
-#                 "tone_style": result.get("tone_style_score", {})
-#             },
-#             "role_analysis": result.get("role_specific_analysis", {}),
-#             "career_opportunities": result.get("career_opportunities", []),
-#             "action_plan": result.get("action_plan", [])
-#         }
-    
-#     except HTTPException:
-#         raise
-#     except Exception as e:
-#         print(f"Error: {e}")
-#         raise HTTPException(status_code=500, detail=f"Analysis failed: {str(e)}")
-    
-#     finally:
-#         if os.path.exists(tmp_path):
-#             os.remove(tmp_path)
-
-# if __name__ == "__main__":
-#     port = int(os.environ.get("PORT", 8000))
-#     uvicorn.run(app, host="0.0.0.0", port=port)
-
 import fitz
 from fastapi import FastAPI, UploadFile, File, Form, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
@@ -417,6 +102,8 @@ import tempfile
 import os
 from dotenv import load_dotenv
 import uvicorn
+import redis.asyncio as redis
+import hashlib
 import json
 import re
 import base64
@@ -425,6 +112,71 @@ load_dotenv()
 
 llm = ChatGroq(model="meta-llama/llama-4-scout-17b-16e-instruct", temperature=0.3)
 app = FastAPI()
+
+REDIS_URL = os.getenv("REDIS_CACHE_URL")
+CACHE_TTL = 600
+
+@app.on_event("startup")
+async def startup_event():
+    """Initialize Redis connection on startup"""
+    global redis_client
+    try:
+        redis_client = redis.from_url(
+            REDIS_URL,
+            decode_responses=True,
+            socket_connect_timeout=5,
+            socket_keepalive=True
+        )
+        await redis_client.ping()
+        print("✅ Redis connected successfully")
+    except Exception as e:
+        print(f"⚠️ Redis connection failed: {e}")
+        print("App will run without caching")
+        redis_client = None
+
+@app.on_event("shutdown")
+async def shutdown_event():
+    """Close Redis connection on shutdown"""
+    global redis_client
+    if redis_client:
+        await redis_client.close()
+        print("Redis connection closed")
+
+def generate_cache_key(file_hash: str, target_role: str) -> str:
+    """Generate cache key from file content hash and target role"""
+    role_normalized = target_role.lower().strip()
+    combined = f"{file_hash}:{role_normalized}"
+    return f"resume:analysis:{hashlib.sha256(combined.encode()).hexdigest()}"
+
+async def get_from_cache(cache_key: str):
+    """Retrieve analysis from cache"""
+    if not redis_client:
+        return None
+    
+    try:
+        cached = await redis_client.get(cache_key)
+        if cached:
+            print(f"✅ Cache HIT: {cache_key[:20]}...")
+            return json.loads(cached)
+    except Exception as e:
+        print(f"Cache read error: {e}")
+    
+    return None
+
+async def save_to_cache(cache_key: str, data: dict):
+    """Save analysis to cache"""
+    if not redis_client:
+        return
+    
+    try:
+        await redis_client.setex(
+            cache_key,
+            CACHE_TTL,
+            json.dumps(data)
+        )
+        print(f"✅ Cache SAVED: {cache_key[:20]}...")
+    except Exception as e:
+        print(f"Cache write error: {e}")
 
 app.add_middleware(CORSMiddleware, allow_origins=["*"], allow_credentials=True, allow_methods=["*"], allow_headers=["*"])
 
@@ -484,6 +236,18 @@ async def analyze_resume(file: UploadFile = File(...), target_role: str = Form(.
     if len(content) > 5 * 1024 * 1024:
         raise HTTPException(400, "Max 5MB")
     
+    file_hash = hashlib.sha256(content).hexdigest()
+    cache_key = generate_cache_key(file_hash, target_role)
+    
+    # Try to get from cache
+    cached_result = await get_from_cache(cache_key)
+    if cached_result:
+        return {
+            "success": True,
+            "cached": True,
+            "data": cached_result
+        }
+    
     with tempfile.NamedTemporaryFile(delete=False, suffix=".pdf") as tmp:
         tmp.write(content)
         tmp_path = tmp.name
@@ -507,17 +271,34 @@ async def analyze_resume(file: UploadFile = File(...), target_role: str = Form(.
         result = json.loads(match.group(0) if match else json_str)
         
         scores = {k: validate_score(result.get(k, {}).get("score")) for k in ["ats", "toneAndStyle", "content", "structure", "skills"]}
-        
+        analysis_data = {
+            "overallScore": calculate_overall_score(scores),
+            "ATS": {
+                "score": scores["ats"],
+                "tips": validate_tips(result.get("ats", {}).get("tips"))
+            },
+            "toneAndStyle": {
+                "score": scores["toneAndStyle"],
+                "tips": validate_tips(result.get("toneAndStyle", {}).get("tips"))
+            },
+            "content": {
+                "score": scores["content"],
+                "tips": validate_tips(result.get("content", {}).get("tips"))
+            },
+            "structure": {
+                "score": scores["structure"],
+                "tips": validate_tips(result.get("structure", {}).get("tips"))
+            },
+            "skills": {
+                "score": scores["skills"],
+                "tips": validate_tips(result.get("skills", {}).get("tips"))
+            }
+        }
+        await save_to_cache(cache_key, analysis_data)
         return {
             "success": True,
-            "data": {
-                "overallScore": calculate_overall_score(scores),
-                "ATS": {"score": scores["ats"], "tips": validate_tips(result.get("ats", {}).get("tips"))},
-                "toneAndStyle": {"score": scores["toneAndStyle"], "tips": validate_tips(result.get("toneAndStyle", {}).get("tips"))},
-                "content": {"score": scores["content"], "tips": validate_tips(result.get("content", {}).get("tips"))},
-                "structure": {"score": scores["structure"], "tips": validate_tips(result.get("structure", {}).get("tips"))},
-                "skills": {"score": scores["skills"], "tips": validate_tips(result.get("skills", {}).get("tips"))}
-            }
+            "cached": False,
+            "data": analysis_data
         }
     except Exception as e:
         raise HTTPException(500, str(e))
