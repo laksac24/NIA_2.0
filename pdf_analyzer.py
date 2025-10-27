@@ -115,24 +115,34 @@ app = FastAPI()
 
 REDIS_URL = os.getenv("REDIS_CACHE_URL")
 CACHE_TTL = 600
+redis_client = None
+
+async def get_redis_client():
+    """Get or create Redis client"""
+    global redis_client
+    if redis_client is None:
+        if not REDIS_URL:
+            print("⚠️ No Redis URL provided. Set REDIS_CACHE_URL environment variable")
+            print("App will run without caching")
+            return None
+        
+        try:
+            redis_client = redis.from_url(
+                REDIS_URL,
+                decode_responses=True
+            )
+            await redis_client.ping()
+            print("✅ Redis connected successfully via Upstash")
+        except Exception as e:
+            print(f"⚠️ Redis connection failed: {e}")
+            print("App will run without caching")
+            redis_client = None
+    return redis_client
 
 @app.on_event("startup")
 async def startup_event():
     """Initialize Redis connection on startup"""
-    global redis_client
-    try:
-        redis_client = redis.from_url(
-            REDIS_URL,
-            decode_responses=True,
-            socket_connect_timeout=5,
-            socket_keepalive=True
-        )
-        await redis_client.ping()
-        print("✅ Redis connected successfully")
-    except Exception as e:
-        print(f"⚠️ Redis connection failed: {e}")
-        print("App will run without caching")
-        redis_client = None
+    await get_redis_client()
 
 @app.on_event("shutdown")
 async def shutdown_event():
@@ -150,11 +160,12 @@ def generate_cache_key(file_hash: str, target_role: str) -> str:
 
 async def get_from_cache(cache_key: str):
     """Retrieve analysis from cache"""
-    if not redis_client:
-        return None
-    
     try:
-        cached = await redis_client.get(cache_key)
+        r = await get_redis_client()
+        if not r:
+            return None
+        
+        cached = await r.get(cache_key)
         if cached:
             print(f"✅ Cache HIT: {cache_key[:20]}...")
             return json.loads(cached)
@@ -165,11 +176,12 @@ async def get_from_cache(cache_key: str):
 
 async def save_to_cache(cache_key: str, data: dict):
     """Save analysis to cache"""
-    if not redis_client:
-        return
-    
     try:
-        await redis_client.setex(
+        r = await get_redis_client()
+        if not r:
+            return
+        
+        await r.setex(
             cache_key,
             CACHE_TTL,
             json.dumps(data)
@@ -304,6 +316,26 @@ async def analyze_resume(file: UploadFile = File(...), target_role: str = Form(.
         raise HTTPException(500, str(e))
     finally:
         os.remove(tmp_path)
+
+@app.delete("/cache/clear")
+async def clear_cache():
+    """Clear all resume analysis cache (admin endpoint)"""
+    try:
+        r = await get_redis_client()
+        if not r:
+            return {"error": "Cache not available"}
+        
+        keys = await r.keys("resume:analysis:*")
+        if keys:
+            await r.delete(*keys)
+        
+        return {
+            "success": True,
+            "deleted": len(keys),
+            "message": f"Cleared {len(keys)} cached analyses"
+        }
+    except Exception as e:
+        raise HTTPException(500, f"Cache clear failed: {e}")
 
 if __name__ == "__main__":
     uvicorn.run(app, host="0.0.0.0", port=int(os.getenv("PORT", 8000)))
