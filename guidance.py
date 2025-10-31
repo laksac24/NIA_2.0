@@ -61,4 +61,3 @@ async def guidance(query):
 
     response = await graph.ainvoke({"messages":query})
     return response["messages"][-1].content
-

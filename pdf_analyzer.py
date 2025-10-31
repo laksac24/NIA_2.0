@@ -159,7 +159,6 @@ def generate_cache_key(file_hash: str, target_role: str) -> str:
     return f"resume:analysis:{hashlib.sha256(combined.encode()).hexdigest()}"
 
 async def get_from_cache(cache_key: str):
-    """Retrieve analysis from cache"""
     try:
         r = await get_redis_client()
         if not r:
@@ -175,7 +174,6 @@ async def get_from_cache(cache_key: str):
     return None
 
 async def save_to_cache(cache_key: str, data: dict):
-    """Save analysis to cache"""
     try:
         r = await get_redis_client()
         if not r:
@@ -215,12 +213,15 @@ Scoring (0-100):
 
 Return ONLY valid JSON:
 {
-    "ats": {"score": 75, "tips": [{"type": "improve", "tip": "Missing key role keywords: [specific keywords]"}]},
-    "toneAndStyle": {"score": 80, "tips": [{"type": "good", "tip": "Tone matches [role] industry standards"}]},
-    "content": {"score": 70, "tips": [{"type": "improve", "tip": "Add [specific role] project examples"}]},
-    "structure": {"score": 85, "tips": [{"type": "improve", "tip": "Highlight [role-relevant] skills at top"}]},
-    "skills": {"score": 65, "tips": [{"type": "improve", "tip": "Add [specific tools/tech for role]"}]}
-}"""
+    "ats": {"score": 75, "tips": [{"type": "improve", "tip": "Missing keywords", "explanation": "Missing key role keywords: [specific keywords]"}]},
+    "toneAndStyle": {"score": 80, "tips": [{"type": "good", "tip": "Tone matches [role] industry standards", "explanation": "Professional and appropriate for the target role's industry."}]},
+    "content": {"score": 70, "tips": [{"type": "improve", "tip": "Add [specific role] project examples", "explanation": "Lacks relevant experience/examples for the target role."}]},
+    "structure": {"score": 85, "tips": [{"type": "improve", "tip": "Highlight [role-relevant] skills at top", "explanation": "You lack skills important for the target role: [specific skills] and technologies"}]},
+    "skills": {"score": 65, "tips": [{"type": "improve", "tip": "Add [specific tools/tech for role]", "explanation": "You lack skills important for the target role: [specific skills] and technologies"}]}
+}
+- MUST ensure, tip should be 4-5 words long and relevant to the target role.
+- MUST ensure, explanation should be 2-3 sentences long and relevant to the target role.
+"""
 
 def validate_score(score):
     try:
@@ -232,8 +233,19 @@ def validate_tips(tips):
     valid = []
     for tip in (tips or [])[:5]:
         if isinstance(tip, dict) and tip.get("type") in ["good", "improve"] and tip.get("tip"):
-            valid.append({"type": tip["type"], "tip": tip["tip"][:200]})
-    return valid or [{"type": "improve", "tip": "Needs improvement"}]
+            valid.append({
+                "type": tip["type"], 
+                "tip": tip["tip"][:200],
+                "explanation": tip.get("explanation", "No explanation provided")[:300]
+            })
+    return valid or [{"type": "improve", "tip": "Needs improvement", "explanation": "No detailed analysis available"}]
+
+# def validate_explanation(explanation):
+#     explain = []
+#     for line in (explanation or []):
+#         if isinstance(line, dict) and line.get("explanation"):
+#             explain.append({"explanation": line["explanation"][:300]})
+#     return explain or [{"explanation": "No detailed explanation available"}]
 
 def calculate_overall_score(scores):
     weights = {"ats": 0.25, "content": 0.25, "skills": 0.20, "structure": 0.15, "toneAndStyle": 0.15}
@@ -299,7 +311,7 @@ async def analyze_resume(file: UploadFile = File(...), target_role: str = Form(.
             },
             "structure": {
                 "score": scores["structure"],
-                "tips": validate_tips(result.get("structure", {}).get("tips"))
+                "tips": validate_tips(result.get("structure", {}).get("tips"))  
             },
             "skills": {
                 "score": scores["skills"],

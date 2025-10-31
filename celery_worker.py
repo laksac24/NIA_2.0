@@ -13,13 +13,10 @@ import ssl
 
 load_dotenv()
 
-# Celery configuration
-# REDIS_HOST = os.getenv("REDIS_HOST", "localhost")
-# REDIS_PORT = int(os.getenv("REDIS_PORT", 6379))
+
 REDIS_BROKER_URL = os.getenv("REDIS_BROKER_URL")
 REDIS_RESULT_BACKEND = os.getenv("REDIS_RESULT_BACKEND")
 
-# Initialize Celery app
 celery_app = Celery(
     "guidance_worker",
     broker=REDIS_BROKER_URL,
@@ -29,7 +26,6 @@ celery_app = Celery(
 celery_app.conf.broker_use_ssl = {'ssl_cert_reqs': ssl.CERT_NONE}
 celery_app.conf.redis_backend_use_ssl = {'ssl_cert_reqs': ssl.CERT_NONE}
 
-# Celery settings
 celery_app.conf.update(
     task_serializer='json',
     accept_content=['json'],
