@@ -221,6 +221,7 @@ Return ONLY valid JSON:
 }
 - MUST ensure, tip should be 4-5 words long and relevant to the target role.
 - MUST ensure, explanation should be 2-3 sentences long and relevant to the target role.
+- MUST give 3 or more tips per section.
 """
 
 def validate_score(score):
